@@ -1,0 +1,111 @@
+#include <Wire.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+#include <RotaryEncoder.h>
+
+// OLED setup
+#define SCREEN_WIDTH 128
+#define SCREEN_HEIGHT 64
+#define OLED_RESET    -1 // Not used on ESP32
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+
+// Rotary encoder setup
+#define ROTARY_PIN_A 4 // GPIO for encoder A
+#define ROTARY_PIN_B 3 // GPIO for encoder B
+#define ROTARY_BUTTON 5 // GPIO for encoder button
+RotaryEncoder encoder(ROTARY_PIN_A, ROTARY_PIN_B);
+
+// Variables for the stopwatch
+unsigned long startTime = 0;
+unsigned long elapsed = 0;
+bool running = false;
+int adjustTime = 0; // For manual adjustment via the rotary encoder
+
+// Button states
+bool buttonPressed = false;
+bool buttonLongPress = false;
+
+void setup() {
+  pinMode(ROTARY_BUTTON, INPUT_PULLUP);
+
+  // Initialize OLED
+  Wire.begin(7, 6);
+  if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
+    Serial.println(F("SSD1306 allocation failed"));
+    for (;;);
+  }
+  display.clearDisplay();
+  display.setTextSize(2);
+  display.setTextColor(SSD1306_WHITE);
+  display.display();
+
+  // Initialize rotary encoder
+  encoder.setPosition(0); // Initialize encoder position
+}
+
+void loop() {
+  // Update rotary encoder state
+  encoder.tick(); // Ensure encoder is updated
+  int newPos = encoder.getPosition();
+
+  // Button handling
+  if (!digitalRead(ROTARY_BUTTON)) {
+    if (!buttonPressed) {
+      buttonPressed = true;
+      unsigned long pressTime = millis();
+      while (!digitalRead(ROTARY_BUTTON)) {
+        if (millis() - pressTime > 1000) { // Long press
+          buttonLongPress = true;
+          break;
+        }
+      }
+      if (buttonLongPress) {
+        resetTimer();
+      } else {
+        toggleTimer();
+      }
+    }
+  } else {
+    buttonPressed = false;
+    buttonLongPress = false;
+  }
+
+  // Adjust time if the timer is not running
+  if (!running && newPos != 0) {
+    adjustTime += newPos * 1000; // Each step adjusts by 1 second
+    encoder.setPosition(0);
+  }
+
+  // Update the timer display
+  updateDisplay();
+}
+
+void toggleTimer() {
+  if (running) {
+    elapsed += millis() - startTime;
+    running = false;
+  } else {
+    startTime = millis();
+    running = true;
+  }
+}
+
+void resetTimer() {
+  running = false;
+  elapsed = 0;
+  adjustTime = 0;
+}
+
+void updateDisplay() {
+  unsigned long currentTime = running ? millis() - startTime + elapsed : elapsed;
+  currentTime += adjustTime;
+
+  int seconds = (currentTime / 1000) % 60;
+  int minutes = (currentTime / 60000) % 60;
+  int hours = currentTime / 3600000;
+
+  display.clearDisplay();
+  display.setCursor(0, 10);
+  display.printf("%02d:%02d:%02d", hours, minutes, seconds);
+  display.display();
+}
